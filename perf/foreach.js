@@ -2,6 +2,7 @@
 
 var Av = require('../aventurine')
 var noKeys = process.argv[2] || 100
+//var max = process.argv[3] || 10
 
 var nativeSt
 var nativeEnd

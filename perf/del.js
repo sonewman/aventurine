@@ -2,10 +2,15 @@
 
 var Av = require('../aventurine')
 var noKeys = process.argv[2] || 100
-var inspect = require('util').inspect
+var index = process.argv[3] || 9
+
+var nativeSt
+var nativeEnd
+
+var customSt
+var customEnd
 
 process.nextTick(function () {
-  var st = +new Date()
   var ar = []
   for (var i = 0; i < 21; i++) ar.push('t' + i)
   +new Date()
@@ -13,25 +18,35 @@ process.nextTick(function () {
 })
 
 process.nextTick(function () {
-  var st = +new Date()
   var av = new Av()
-//  for (var i = 0; i < 21; i++) av.push('t' + i)
+  for (var i = 0; i < 21; i++) av.push('t' + i)
   +new Date()
   console.log('with %s keys', noKeys)
 })
 
 process.nextTick(function () {
-  var st = +new Date()
   var ar = []
   for (var i = 0; i < noKeys; i++) ar.push('t' + i)
-  console.log('Native Array: ' + ((+new Date()) - st) + 'ms')
+  nativeSt = +new Date()
+  var c = ar.slice(index, 1)
+  nativeEnd = +new Date()
 })
 
+debugger
+
 process.nextTick(function () {
-  var st = +new Date()
   var av = new Av()
   for (var i = 0; i < noKeys; i++) av.push('t' + i)
-  console.log('Custom DB:    ' + ((+new Date()) - st) + 'ms')
-//  console.log(av.root.list)
-//  console.log(inspect(av.root, {depth: Infinity}))
+  
+debugger
+  customSt = +new Date()
+  var res = av.del(index)
+  console.log(av.root)
+  customEnd = +new Date()
+})
+
+
+process.on('exit', function () {
+  console.log('Native Array: ' + (nativeEnd - nativeSt) + 'ms')
+  console.log('Custom DB:    ' + (customEnd - customSt) + 'ms')
 })
