@@ -40,7 +40,7 @@ process.nextTick(function () {
   
 debugger
   customSt = +new Date()
-  var res = av.drop(index)
+  var res = av.del(index)
   console.log(av.root)
   customEnd = +new Date()
 })

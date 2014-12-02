@@ -1,10 +1,14 @@
 module.exports = Aventurine
 
-function Model() {
+function Branch() {
   this.list = []
 }
 
-var mpro = Model.prototype
+function isBranch(obj) {
+  return obj instanceof Branch
+}
+
+var mpro = Branch.prototype
 mpro.list = null
 mpro.parent = null
 mpro.prev = null
@@ -23,11 +27,11 @@ function Aventurine() {
   = this.cursor
   = this.first
   = this.iterator
-  = new Model()
+  = new Branch()
   this.root.parent = this
 }
 
-Aventurine.Model
+Aventurine.Branch
 Aventurine.prototype.length = null
 Aventurine.prototype.max = null
 Aventurine.prototype.root = null
@@ -36,25 +40,25 @@ Aventurine.prototype.first = null
 Aventurine.prototype.iterator = null
 Aventurine.prototype.iteratorIndex = null
 
-function addInheritance(model, parent) {
-  model.parent = parent
-  model.index = parent.list.length
-  parent.list.push(model)
+function addInheritance(branch, parent) {
+  branch.parent = parent
+  branch.index = parent.list.length
+  parent.list.push(branch)
   parent.length += 1
 }
 
-function resolveNext(av, model, parent, max, prev) {
-  if (model.length < max) return model
+function resolveNext(av, branch, parent, max, prev) {
+  if (branch.length < max) return branch
 
   if (parent && !parent.root) {
     if (parent.length === max)
       return resolveNext(av, parent, parent.parent, max, prev)
   } else {
-    parent = new Model()
+    parent = new Branch()
     av.root = parent
-    parent.count = model.count
+    parent.count = branch.count
     parent.parent = av
-    addInheritance(model, parent)
+    addInheritance(branch, parent)
   }
 
   var list = parent.list
@@ -62,7 +66,7 @@ function resolveNext(av, model, parent, max, prev) {
 
   if (child.length < max) return child
 
-  child = new Model()
+  child = new Branch()
   addInheritance(child, parent)
 
   child.prev = prev
@@ -70,41 +74,51 @@ function resolveNext(av, model, parent, max, prev) {
   return child
 }
 
-//function recursiveIncrement(model) {
-//  var parent = model.parent
-//  model.count += 1
+
+//function recursiveIncrement(branch) {
+//  var parent = branch.parent
+//  branch.count += 1
 //
 //  if (parent && !parent.root)
-//    recursiveIncrement(model.parent)
+//    recursiveIncrement(branch.parent)
 //}
 
-function recurseUpTree(model, cb) {
-  var parent = model.parent
-  cb(model)
+function recurseUpTree(branch, cb) {
+  var parent = branch.parent
+  cb(branch)
 
   if (parent && !parent.root)
-    recurseUpTree(model.parent, cb)
+    recurseUpTree(branch.parent, cb)
 }
 
-function increment(model) {
-  model.count += 1
+function increment(branch) {
+  branch.count += 1
 }
 
-function recursiveIncrement(model) {
-  recurseUpTree(model, increment)
+function recursiveIncrement(branch) {
+  recurseUpTree(branch, increment)
 }
 
-function decrement(model) {
-  model.count -= 1
+function decrement(branch) {
+  branch.count -= 1
 }
 
-function recursiveDecrement(model) {
-  recurseUpTree(model, decrement)
+function recursiveDecrement(branch) {
+  recurseUpTree(branch, decrement)
+}
+
+function recursiveSubtract(branch, value) {
+  function decrease(b) {
+    b.count -= value
+  }
+
+  recurseUpTree(branch, decrease)
 }
 
 
 Aventurine.prototype.push = function (item) {
   var c = this.cursor
+
   this.cursor = resolveNext(this, c, c.parent, this.max, c)
   this.cursor.list.push(item)
   recursiveIncrement(this.cursor)
@@ -142,12 +156,49 @@ function isNullOrUndefined(val) {
   return val === null || val === undefined
 }
 
-function call(fn, ctx, arg1, arg2) {
-  if (isNullOrUndefined(ctx)) fn(arg1, arg2)
-  else fn.call(ctx, arg1, arg2)
+
+var schedule = 'undefined' === typeof setImmediate
+  ? setImmediate
+  : process.nextTick
+
+function callAsync(fn, ctx, arg1, arg2, arg3) {
+  schedule(function () {
+    call(fn, ctx, arg1, arg2, arg3)
+  })
 }
 
-Aventurine.prototype.forEach = function (fn, ctx) {
+function call(fn, ctx, arg1, arg2, arg3) {
+  if (isNullOrUndefined(ctx)) fn(arg1, arg2, arg3)
+  else fn.call(ctx, arg1, arg2, arg3)
+}
+
+Aventurine.prototype.forEach = function forEach(fn, ctx) {
+  var cursor = this.first
+  var max = this.max
+  var c = 0
+
+  ;(function n(i) {
+    function callNext() { n(i) }
+
+    var next = cursor.list[i]
+    if (!next) return
+
+    if (i < max && next) {
+      callAsync(fn, ctx, next, c++, callNext)
+      i += 1
+    } else {
+      i = 0
+      cursor = cursor.next
+
+      if (cursor && cursor.length) {
+        callAsync(fn, ctx, cursor.list[0], c++, callNext)
+        i += 1
+      }
+    }
+  }(0))
+}
+
+Aventurine.prototype.forEachSync = function (fn, ctx) {
   var cursor = this.first
   var l = this.length
   var max = this.max
@@ -174,89 +225,139 @@ Aventurine.prototype.forEach = function (fn, ctx) {
 
 function noop() {}
 
-function find(av, model, index, lower, cb) {
-  var list = model.list
+function noMatchErr(i) {
+  return new Error('No Matching Item ' + i)
+}
+
+
+function find_(av, item, index, lower, cb) {
+  process.nextTick(function () {
+    find(av, item, index, lower, cb)
+  })
+}
+
+function find(av, branch, index, lower, cb) {
+  var list = branch.list
   var l = list.length
+  var total = 0
   var upper = 0
-  var total
+  var item
 
-  // grab first item and check if it is
-  // a Model
-  var item = list[0]
+  item = list[index - lower]
+  if (item && !isBranch(item)) return cb(null, item)
 
-  if (!(item instanceof Model)) {
-    item = list[index]
-    cb(av, model, list, item, index)
-    
-    return !isNullOrUndefined(item) 
-      ? item
-      : null
-  }
-
-  upper = item.count
+  if (av.length < index) return cb(noMatchErr(index))
+  
+  // slower case or walking branches
   for (var i = 0; i < l; i++) {
-    if (index >= lower && index < upper) {
-      index -= lower
-      return find(av, item, index, lower, cb)
-    }
+    item = list[i]
+    
+    if (!item) break
 
-    total = item.count
-    item = list[i + 1]
-    if (item)  {
+    if (isBranch(item)) {
       lower += total
-      upper += item.count
-    } else {
-      break
+      total = item.count
+      upper += total
+      
+      if (index >= lower && index < upper)
+        return find_(av, item, index, lower, cb)
     }
   }
-
-  return null
+  
+  cb(noMatchErr(index))
 }
 
-Aventurine.prototype.get = function (index) {
-  return find(this, this.root, index, 0, noop)
+Aventurine.prototype.get = function (index, cb) {
+  find(this, this.root, index, 0, cb)
 }
 
-function del(av, model, list, item, index) {
+function del(av, branch, list, item, index) {
   var parent
   var removed
   var next
   var prev
-  
-  if (index >= av.length) return null
-  
+
   if (list.length > 1) {
     removed = list.splice(index, 1)
-    recursiveDecrement(model)
-    model.length -= 1
+    recursiveDecrement(branch)
+    branch.length -= 1
   } else {
     removed = list[0]
     list.length = 0
-    recursiveDecrement(model)
-    
-    parent = model.parent
+    recursiveDecrement(branch)
+
+    parent = branch.parent
     if (!parent.root) {
-      parent.list.splice(model.index, 1)
+      parent.list.splice(branch.index, 1)
       parent.length -= 1
     }
-  
-    next = model.next || null
-    prev = model.prev || null
+
+    next = branch.next || null
+    prev = branch.prev || null
 
     if (prev) prev.next = next
     if (next) next.prev = prev
-    
 
-    if (model === av.cursor)
+    if (branch === av.cursor)
       av.cursor = prev
 
-    if (model === av.iterator)
-      av.iterator = next
+    if (branch === av.iterator)
+      av.iterator = prev
   }
-  
+
   av.length -= 1
 }
 
 Aventurine.prototype.del = function (index) {
+  if (index >= this.length) return null
   return find(this, this.root, index, 0, del)
+}
+
+Aventurine.prototype.drop = function (index) {
+  if (index < this.length && index > -1) 
+    find(this, this.root, index, 0, drop)
+  
+  function drop(av, branch, list, item, index) {
+    if ((av.length - 1) === index) {
+      del(av, branch, list, item, index)
+      return
+    }
+    
+    var prevLen = list.length
+
+    branch.length
+    = list.length
+    = index
+
+    console.log(branch.count, branch.length, list.length)
+    
+    // fix `next`
+    branch.next = null
+
+    av.cursor = branch
+    
+    var diff = prevLen - index
+    console.log(diff)
+    recursiveSubtract(branch, diff)
+    av.length -= diff
+
+    var parent = branch.parent
+    var branchIndex = branch.index
+    var parentLen = parent.length
+    
+    function resolveRemove(m) {
+//      console.log(m)
+//      console.log()
+//      var newTotal = m.index
+//      var diff = m.list.length - newTotal
+//      m.length = m.list.length = m.index + 1
+//      av.length -= diff
+    }
+
+//    if (parent && !parent.root) {
+//      for (var i = (branchIndex + 1); i < parentLen; i++)
+//        recurseUpTree(parent.list[i], resolveRemove)
+//    }
+  }
+
 }
